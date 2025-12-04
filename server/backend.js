@@ -5,6 +5,19 @@ const axios = require("axios");
 const app = express();
 app.use(cors());
 app.use(express.json());
+const mongoose = require("mongoose");
+
+mongoose.connect(process.env.MONGO_URI || "mongodb://localhost:27017/spotifyApp")
+  .then(() => console.log("MongoDB connected"))
+  .catch(err => console.error("MongoDB connection error:", err));
+
+
+const unfollowedArtistSchema = new mongoose.Schema({
+  spotifyId: { type: String, required: true },
+  name: { type: String, required: true },
+  unfollowedAt: { type: Date, default: Date.now }
+});
+const UnfollowedArtist = mongoose.model("UnfollowedArtist", unfollowedArtistSchema);
 
 const SPOTIFY_TOKEN_URL = "https://accounts.spotify.com/api/token";
 const SPOTIFY_API_URL = "https://api.spotify.com/v1";
@@ -93,6 +106,19 @@ app.get("/user/data", async (req, res) => {
         unfollowList.push({id: artist.id, name: artist.name});
       }
     });
+
+    const saveOps = unfollowList.map(a => ({
+      updateOne: {
+        filter: { spotifyId: a.id },
+        update: { $set: { name: a.name, unfollowedAt: new Date() } },
+        upsert: true
+      }
+    }));
+
+    if (saveOps.length > 0) {
+      UnfollowedArtist.bulkWrite(saveOps).catch(err => console.error("DB save error:", err));
+    }
+
     res.json({artistsToUnfollow: unfollowList});
   } catch (err) {
     res.status(500).json({ error: "Failed to fetch Spotify data" });
